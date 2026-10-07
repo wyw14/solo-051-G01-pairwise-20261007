@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/wyw14/cry-161/internal/model"
+	"github.com/wyw14/cry-161/internal/recipe"
 	"github.com/wyw14/cry-161/internal/service"
 	"net/http"
 )
@@ -27,7 +29,12 @@ func startRun(svc *service.Service) http.HandlerFunc {
 		}
 		value, err := svc.Start(r.Context(), input.Batch, id)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			switch {
+			case errors.Is(err, recipe.ErrNoActiveRelease), errors.Is(err, recipe.ErrInvalidState):
+				http.Error(w, err.Error(), http.StatusConflict)
+			default:
+				http.Error(w, err.Error(), 500)
+			}
 			return
 		}
 		writeJSON(w, value)

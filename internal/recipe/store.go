@@ -30,6 +30,13 @@ func (s *Store) Active(id model.ID) (*model.Recipe, error) {
 	}
 	return cloneRecipe(recipe), nil
 }
+
+// Deactivate pulls a recipe out of the active set (release withdrawal).
+func (s *Store) Deactivate(id model.ID) {
+	s.mu.Lock()
+	delete(s.active, id)
+	s.mu.Unlock()
+}
 func (s *Store) List() []*model.Recipe {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

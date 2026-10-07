@@ -12,6 +12,7 @@ type Revision struct {
 	ID        model.ID      `json:"id"`
 	RecipeID  model.ID      `json:"recipe_id"`
 	Number    int           `json:"number"`
+	Name      string        `json:"name"`
 	CreatedAt time.Time     `json:"created_at"`
 	Layers    []model.Layer `json:"layers"`
 }
@@ -30,7 +31,7 @@ func (s *RevisionStore) Freeze(recipe *model.Recipe) (Revision, error) {
 	if err != nil {
 		return Revision{}, err
 	}
-	revision := Revision{ID: model.NewID(), RecipeID: plan.RecipeID, Number: plan.Revision, CreatedAt: time.Now().UTC(), Layers: append([]model.Layer(nil), plan.Layers...)}
+	revision := Revision{ID: model.NewID(), RecipeID: plan.RecipeID, Number: plan.Revision, Name: recipe.Name, CreatedAt: time.Now().UTC(), Layers: append([]model.Layer(nil), plan.Layers...)}
 	s.mu.Lock()
 	existing := s.values[recipe.ID]
 	for _, value := range existing {
@@ -50,4 +51,31 @@ func (s *RevisionStore) List(recipeID model.ID) []Revision {
 	s.mu.RUnlock()
 	sort.Slice(result, func(i, j int) bool { return result[i].Number < result[j].Number })
 	return result
+}
+
+// NextNumber returns the revision number the next freeze for the recipe
+// must carry.
+func (s *RevisionStore) NextNumber(recipeID model.ID) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	next := 1
+	for _, rev := range s.values[recipeID] {
+		if rev.Number >= next {
+			next = rev.Number + 1
+		}
+	}
+	return next
+}
+
+// Get returns a single frozen revision.
+func (s *RevisionStore) Get(recipeID, revisionID model.ID) (Revision, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, rev := range s.values[recipeID] {
+		if rev.ID == revisionID {
+			rev.Layers = append([]model.Layer(nil), rev.Layers...)
+			return rev, true
+		}
+	}
+	return Revision{}, false
 }

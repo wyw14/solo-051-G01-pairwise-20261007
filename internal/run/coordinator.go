@@ -15,6 +15,7 @@ import (
 type Coordinator struct {
 	Registry *Registry
 	Recipes  *recipe.Store
+	Releases *recipe.ReleaseRegistry
 	Carrier  *substrate.Carrier
 	Chamber  *chamber.Chamber
 	Vacuum   *vacuum.Controller
@@ -22,13 +23,24 @@ type Coordinator struct {
 }
 
 func (c *Coordinator) Start(ctx context.Context, batch string, recipeID model.ID) (*model.Run, error) {
-	if _, err := c.Recipes.Active(recipeID); err != nil {
+	if c.Releases == nil {
+		return nil, fmt.Errorf("release governance is not configured")
+	}
+	runID := model.NewID()
+	if err := c.Carrier.Load(batch, runID); err != nil {
 		return nil, err
 	}
-	run := &model.Run{ID: model.NewID(), Batch: batch, RecipeID: recipeID, State: model.Loading, CreatedAt: timeNow(), UpdatedAt: timeNow()}
-	if err := c.Carrier.Load(batch, run.ID); err != nil {
+	// Governance binding is the sole admission gate: every run pins
+	// itself to the immutable snapshot of the active release. A withdrawn
+	// or never published recipe is rejected here, and later publications,
+	// withdrawals or rollbacks cannot change what this run executes.
+	bound, err := c.Releases.Bind(runID, recipeID)
+	if err != nil {
+		c.Carrier.Unload(batch)
 		return nil, err
 	}
+	run := &model.Run{ID: runID, Batch: batch, RecipeID: recipeID, RecipeRevision: bound.RevisionNumber, RecipeReleaseID: bound.ReleaseID, State: model.Loading, CreatedAt: timeNow(), UpdatedAt: timeNow()}
+	_ = c.Journal.Append(journal.RunBound(runID, recipeID, bound.RevisionNumber, bound.ReleaseID))
 	c.Registry.Add(run)
 	if !c.Registry.Transition(run.ID, model.Pumping) {
 		return nil, fmt.Errorf("state transition failed")

@@ -60,3 +60,21 @@ func (r *Registry) List() []*model.Run {
 	}
 	return out
 }
+
+// HasActiveRun reports whether the recipe has a started run that has not
+// yet left the coating process. Released and failed runs are terminal and
+// do not block publishing or rollback; every other state keeps the run
+// pinned to its immutable release.
+func (r *Registry) HasActiveRun(recipeID model.ID) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, value := range r.runs {
+		if value.RecipeID != recipeID {
+			continue
+		}
+		if value.State != model.Released && value.State != model.Failed {
+			return true
+		}
+	}
+	return false
+}

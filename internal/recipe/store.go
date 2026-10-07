@@ -21,6 +21,23 @@ func (s *Store) Publish(recipe *model.Recipe) {
 	recipe.Published = true
 	s.active[recipe.ID] = cloneRecipe(recipe)
 }
+
+// Replace installs a recipe snapshot as the active projection. It is used by
+// governance to point production at an immutable frozen revision.
+func (s *Store) Replace(recipe *model.Recipe) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	copy := cloneRecipe(recipe)
+	copy.Published = true
+	s.active[copy.ID] = copy
+}
+
+// Retract removes the active projection for a recipe.
+func (s *Store) Retract(id model.ID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.active, id)
+}
 func (s *Store) Active(id model.ID) (*model.Recipe, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -60,3 +60,32 @@ func (r *Registry) List() []*model.Run {
 	}
 	return out
 }
+
+// RunningCountForRevision implements recipe.RunLiveness: it counts runs still
+// in progress on an immutable revision. Governance uses it to refuse
+// withdrawing a revision out from under runs pinned to it.
+func (r *Registry) RunningCountForRevision(recipeID model.ID, revision int) int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for _, value := range r.runs {
+		if value.RecipeID == recipeID && value.RecipeRevision == revision && !value.State.IsTerminal() {
+			count++
+		}
+	}
+	return count
+}
+
+// RunningCount counts runs still in progress on any revision of a recipe.
+// Governance uses it to freeze rollback/topology changes while runs exist.
+func (r *Registry) RunningCount(recipeID model.ID) int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for _, value := range r.runs {
+		if value.RecipeID == recipeID && !value.State.IsTerminal() {
+			count++
+		}
+	}
+	return count
+}

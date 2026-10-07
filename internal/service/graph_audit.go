@@ -65,7 +65,12 @@ func ExerciseProductionGraph(ctx context.Context, svc *Service, runtime *Runtime
 	if len(runs) > 0 {
 		starter := &run.Starter{Registry: svc.Runs, Vacuum: svc.Vacuum}
 		result["start_coating"] = ExecuteError(starter.StartCoating(ctx, runs[0].ID))
-		scheduled, err := svc.Schedule(ctx, runtime, runs[0].ID, []model.Layer{{Number: 1, Material: "SiO2", TargetNanometers: 1, RateNanometers: 1}})
+		// Layers always come from the run's pinned immutable revision.
+		var pinned []model.Layer
+		if revision, ok := svc.Revisions.Get(runs[0].RecipeID, runs[0].RecipeRevision); ok {
+			pinned = revision.Layers[:1]
+		}
+		scheduled, err := svc.Schedule(ctx, runtime, runs[0].ID, pinned)
 		result["schedule"] = fmt.Sprintf("items=%d error=%s", len(scheduled), ExecuteError(err))
 	}
 	return result

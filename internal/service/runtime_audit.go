@@ -49,8 +49,8 @@ func (s *Service) Audit(ctx context.Context, runtime *Runtime) AuditReport {
 		report.Passed = false
 		report.Checks["recipes"] = "no recipes"
 	} else {
-		frozen, err := runtime.RevisionStore.Freeze(recipes[0])
-		if err != nil && len(runtime.RevisionStore.List(recipes[0].ID)) == 0 {
+		frozen, err := s.Revisions.Freeze(recipes[0])
+		if err != nil && len(s.Revisions.List(recipes[0].ID)) == 0 {
 			report.Passed = false
 			report.Checks["recipes"] = err.Error()
 		} else {
@@ -151,7 +151,7 @@ func (s *Service) Audit(ctx context.Context, runtime *Runtime) AuditReport {
 	} else {
 		report.Checks["source_cooldown"] = "ready"
 	}
-	value := model.Run{ID: model.NewID(), Batch: "audit", RecipeID: model.NewID(), State: model.Loading, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	value := model.Run{ID: model.NewID(), Batch: "audit", RecipeID: model.NewID(), RecipeRevision: 1, State: model.Loading, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 	if err := model.ValidateRun(value); err != nil {
 		report.Passed = false
 		report.Checks["model"] = err.Error()

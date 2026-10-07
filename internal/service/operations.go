@@ -8,7 +8,6 @@ import (
 	"github.com/wyw14/cry-161/internal/model"
 	"github.com/wyw14/cry-161/internal/optical"
 	"github.com/wyw14/cry-161/internal/quartz"
-	"github.com/wyw14/cry-161/internal/recipe"
 	"github.com/wyw14/cry-161/internal/run"
 	"github.com/wyw14/cry-161/internal/shutter"
 	"github.com/wyw14/cry-161/internal/source"
@@ -26,7 +25,6 @@ type Runtime struct {
 	Incidents       *journal.IncidentStore
 	Timeline        *run.Timeline
 	VacuumTelemetry *vacuum.Telemetry
-	RevisionStore   *recipe.RevisionStore
 	InterlockAudit  *interlock.Audit
 	Shutter         *shutter.Controller
 	Sequence        int64
@@ -36,7 +34,7 @@ type Runtime struct {
 func NewRuntime() *Runtime {
 	driver := shutter.NewDriver()
 	feedback := shutter.NewFeedback()
-	return &Runtime{Monitor: optical.NewMonitor(), Window: optical.NewThicknessWindow(128), Broadcast: optical.NewBroadcaster(), Traces: journal.NewTraceStore(), Incidents: journal.NewIncidentStore(), Timeline: run.NewTimeline(), VacuumTelemetry: vacuum.NewTelemetry(128), RevisionStore: recipe.NewRevisionStore(), InterlockAudit: interlock.NewAudit(), Shutter: shutter.NewController(driver, feedback), StartedAt: time.Now().UTC()}
+	return &Runtime{Monitor: optical.NewMonitor(), Window: optical.NewThicknessWindow(128), Broadcast: optical.NewBroadcaster(), Traces: journal.NewTraceStore(), Incidents: journal.NewIncidentStore(), Timeline: run.NewTimeline(), VacuumTelemetry: vacuum.NewTelemetry(128), InterlockAudit: interlock.NewAudit(), Shutter: shutter.NewController(driver, feedback), StartedAt: time.Now().UTC()}
 }
 
 func (r *Runtime) NextSequence() int64 {
@@ -88,6 +86,18 @@ func (s *Service) RunLayer(ctx context.Context, runtime *Runtime, runID model.ID
 	if !ok {
 		return fmt.Errorf("run not found")
 	}
+	revision, ok := s.Revisions.Get(value.RecipeID, value.RecipeRevision)
+	if !ok {
+		return fmt.Errorf("run is not bound to frozen revision %d", value.RecipeRevision)
+	}
+	pinned, ok := layerInRevision(revision, layer.Number)
+	if !ok {
+		return fmt.Errorf("layer %d is not part of pinned revision %d", layer.Number, value.RecipeRevision)
+	}
+	if layer != pinned {
+		return fmt.Errorf("layer %d does not match frozen revision %d", layer.Number, value.RecipeRevision)
+	}
+	layer = pinned
 	command, err := runtime.Command(runID, value.Layer, model.CommandCondition)
 	if err != nil || command.Status != "completed" {
 		return fmt.Errorf("layer command rejected")

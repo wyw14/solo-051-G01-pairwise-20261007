@@ -11,8 +11,10 @@ import (
 type Revision struct {
 	ID        model.ID      `json:"id"`
 	RecipeID  model.ID      `json:"recipe_id"`
+	Name      string        `json:"name"`
 	Number    int           `json:"number"`
 	CreatedAt time.Time     `json:"created_at"`
+	Digest    string        `json:"digest"`
 	Layers    []model.Layer `json:"layers"`
 }
 
@@ -30,18 +32,37 @@ func (s *RevisionStore) Freeze(recipe *model.Recipe) (Revision, error) {
 	if err != nil {
 		return Revision{}, err
 	}
-	revision := Revision{ID: model.NewID(), RecipeID: plan.RecipeID, Number: plan.Revision, CreatedAt: time.Now().UTC(), Layers: append([]model.Layer(nil), plan.Layers...)}
+	revision := Revision{ID: model.NewID(), RecipeID: plan.RecipeID, Name: recipe.Name, Number: plan.Revision, CreatedAt: time.Now().UTC(), Digest: ContentDigest(plan.Layers), Layers: append([]model.Layer(nil), plan.Layers...)}
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	existing := s.values[recipe.ID]
 	for _, value := range existing {
 		if value.Number == revision.Number {
-			s.mu.Unlock()
 			return Revision{}, fmt.Errorf("revision already frozen")
 		}
 	}
 	s.values[recipe.ID] = append(existing, revision)
-	s.mu.Unlock()
 	return revision, nil
+}
+
+func (s *RevisionStore) Get(recipeID model.ID, number int) (Revision, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, value := range s.values[recipeID] {
+		if value.Number == number {
+			return cloneRevision(value), true
+		}
+	}
+	return Revision{}, false
+}
+
+// Latest returns the highest-numbered frozen revision for a recipe.
+func (s *RevisionStore) Latest(recipeID model.ID) (Revision, bool) {
+	revisions := s.List(recipeID)
+	if len(revisions) == 0 {
+		return Revision{}, false
+	}
+	return revisions[len(revisions)-1], true
 }
 
 func (s *RevisionStore) List(recipeID model.ID) []Revision {
@@ -49,5 +70,13 @@ func (s *RevisionStore) List(recipeID model.ID) []Revision {
 	result := append([]Revision(nil), s.values[recipeID]...)
 	s.mu.RUnlock()
 	sort.Slice(result, func(i, j int) bool { return result[i].Number < result[j].Number })
+	for index := range result {
+		result[index] = cloneRevision(result[index])
+	}
 	return result
+}
+
+func cloneRevision(in Revision) Revision {
+	in.Layers = append([]model.Layer(nil), in.Layers...)
+	return in
 }

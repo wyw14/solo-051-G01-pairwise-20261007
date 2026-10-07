@@ -13,19 +13,22 @@ import (
 )
 
 type Coordinator struct {
-	Registry *Registry
-	Recipes  *recipe.Store
-	Carrier  *substrate.Carrier
-	Chamber  *chamber.Chamber
-	Vacuum   *vacuum.Controller
-	Journal  *journal.Store
+	Registry   *Registry
+	Governance *recipe.Governance
+	Carrier    *substrate.Carrier
+	Chamber    *chamber.Chamber
+	Vacuum     *vacuum.Controller
+	Journal    *journal.Store
 }
 
 func (c *Coordinator) Start(ctx context.Context, batch string, recipeID model.ID) (*model.Run, error) {
-	if _, err := c.Recipes.Active(recipeID); err != nil {
+	// Every run must bind an immutable, published frozen revision. The pinned
+	// revision never changes, so a later publication cannot affect this run.
+	pinned, err := c.Governance.Bind(recipeID)
+	if err != nil {
 		return nil, err
 	}
-	run := &model.Run{ID: model.NewID(), Batch: batch, RecipeID: recipeID, State: model.Loading, CreatedAt: timeNow(), UpdatedAt: timeNow()}
+	run := &model.Run{ID: model.NewID(), Batch: batch, RecipeID: recipeID, RecipeRevision: pinned.Number, State: model.Loading, CreatedAt: timeNow(), UpdatedAt: timeNow()}
 	if err := c.Carrier.Load(batch, run.ID); err != nil {
 		return nil, err
 	}
